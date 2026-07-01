@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
                 xmlns:xs="http://www.w3.org/2001/XMLSchema"
+                xmlns:funcl="http://www.clankysoftware.com/xslt/functions"
                 xmlns="http://www.clankysoftware.com/xslt/edifactparser"
-                expand-text="yes"
+                exclude-result-prefixes="xs funcl"
                 version="2.0">
     
     <xsl:output method="xml" indent="yes"/>
@@ -13,12 +14,20 @@
         </xsl:copy>
     </xsl:template>
     
+    <!-- Function to escape reserved regex characters -->
+    <xsl:function name="funcl:escape-regex" as="xs:string">
+        <xsl:param name="char" as="xs:string"/>
+        <xsl:sequence select="replace($char, '([\.\[\]\\\|\^\$\?\*\+\{\}\(\)])', '\\$1')"/>
+    </xsl:function>
+    
     <xsl:template match="edifact">
+        <xsl:variable name="clean-doc" select="replace(., '^\s+', '')"/>
         <!-- Define the UNA line -->
+        <xsl:variable name="has-una" select="starts-with($clean-doc, 'UNA')" />
         <xsl:variable name="myu">
             <xsl:choose>
-                <xsl:when test="substring(., 1, 3) = 'UNA'">
-                    <xsl:value-of select="substring(., 4, 6)"/>
+                <xsl:when test="$has-una">
+                    <xsl:value-of select="substring($clean-doc, 4, 6)"/>
                 </xsl:when>
                 <xsl:otherwise>:+.? '</xsl:otherwise>
             </xsl:choose>
@@ -31,11 +40,16 @@
         <xsl:variable name="release" select="substring($myu, 4, 1)"/>
         <xsl:variable name="reserved" select="substring($myu, 5, 1)"/>
         <xsl:variable name="segmentdel" select="substring($myu, 6, 1)"/>
+        <!-- Handling escape -->
+        <xsl:variable name="regex-release" select="funcl:escape-regex($release)"/>
+        <xsl:variable name="regex-seg" select="funcl:escape-regex($segmentdel)"/>
+        <xsl:variable name="regex-data" select="funcl:escape-regex($datadel)"/>
+        <xsl:variable name="regex-sub" select="funcl:escape-regex($subdel)"/>
         
         <!-- Output the UNA comments -->
         <xsl:text>&#10;</xsl:text>
         <xsl:choose>
-            <xsl:when test="substring(., 1, 3) = 'UNA'">
+            <xsl:when test="$has-una">
                 <xsl:comment>UNA segment found</xsl:comment><xsl:text>&#10;</xsl:text>
             </xsl:when>
             <xsl:otherwise>
@@ -47,39 +61,48 @@
         <xsl:comment>Data element delimiter &gt;<xsl:value-of select="$datadel"/>&lt;</xsl:comment><xsl:text>&#10;</xsl:text>
         <xsl:comment>Decimal point indicator &gt;<xsl:value-of select="$decind"/>&lt;</xsl:comment><xsl:text>&#10;</xsl:text>
         <xsl:comment>Release character &gt;<xsl:value-of select="$release"/>&lt; </xsl:comment><xsl:text>&#10;</xsl:text>
-        <xsl:comment>Reserved for future use &gt;<xsl:value-of select="$reserved"/>&lt;</xsl:comment><xsl:text>&#10;</xsl:text>
-        <xsl:comment>Segment terminator &gt;<xsl:value-of select="$segmentdel"/>&lt;</xsl:comment><xsl:text>&#10;&#10;   </xsl:text>
+        <xsl:comment>Reserved &gt;<xsl:value-of select="$reserved"/>&lt;</xsl:comment><xsl:text>&#10;</xsl:text>
+        <xsl:comment>Segment terminator &gt;<xsl:value-of select="$segmentdel"/>&lt;</xsl:comment><xsl:text>&#10;&#10;</xsl:text>
+        
+        <!-- Clean up and escape chars in datafields -->
+        <xsl:variable name="raw-payload" select="if (starts-with($clean-doc, 'UNA')) then substring($clean-doc, 10) else $clean-doc" />
+        
+        <xsl:variable name="step1" select="replace($raw-payload, concat($regex-release, $regex-release), '&#xE004;')"/>
+        <xsl:variable name="step2" select="replace($step1, concat($regex-release, $regex-seg), '&#xE001;')"/>
+        <xsl:variable name="step3" select="replace($step2, concat($regex-release, $regex-data), '&#xE002;')"/>
+        <xsl:variable name="step4" select="replace($step3, concat($regex-release, $regex-sub), '&#xE003;')"/>
+        <xsl:variable name="safe-payload" select="$step4"/>
         
         <!-- Construct the edifact XML -->
         <xsl:element name="edifact">
-            
-            <xsl:for-each select="tokenize(normalize-space(.), concat('[', $segmentdel, ']'))">
-                <xsl:variable name="editag" select="substring(normalize-space(.), 1, 3)"/>
-                <xsl:variable name="ediline" select="substring-after(normalize-space(.), concat($editag,$datadel) )"/>
+            <xsl:for-each select="tokenize($safe-payload, $regex-seg)">
                 
-                <xsl:choose>
-                    <xsl:when test="$editag != 'UNA'">
-                        <xsl:if test="$editag != ''">
-                            <xsl:element name="{$editag}">
-                                <xsl:for-each select="tokenize(normalize-space($ediline), concat('[', $datadel, ']'))">
-                                    <xsl:variable name="subtag" select="concat($editag, format-number(position(), '00'))"/>
+                <xsl:variable name="segment" select="replace(., '^\s+|\s+$', '')"/>
+                
+                <xsl:if test="$segment != ''">
+                    <xsl:variable name="editag" select="tokenize($segment, $regex-data)[1]"/>
+                    
+                    <xsl:if test="matches($editag, '^[a-zA-Z0-9]+$')">
+                        <xsl:element name="{$editag}">
+                            
+                            <xsl:for-each select="tokenize($segment, $regex-data)[position() > 1]">
+                                <xsl:variable name="data-pos" select="position()"/>
+                                <xsl:variable name="subtag" select="concat($editag, format-number($data-pos, '00'))"/>
+                                
+                                <xsl:for-each select="tokenize(., $regex-sub)">
+                                    <xsl:variable name="sub-pos" select="position()"/>
+                                    <xsl:variable name="innertag" select="concat($subtag, '.', format-number($sub-pos, '00'))"/>
                                     
-                                    <xsl:for-each select="tokenize(normalize-space(.), concat('[', $subdel, ']'))">
-                                        <xsl:variable name="innertag" select="concat($subtag, '.', format-number(position(), '00'))"/>
-                                        <xsl:if test=". != ''">
-                                            <xsl:element name="{$innertag}">
-                                                <xsl:value-of select="."/>
-                                            </xsl:element>
-                                        </xsl:if>
-                                    </xsl:for-each>
+                                    <xsl:element name="{$innertag}">
+                                        <xsl:value-of select="translate(., '&#xE004;&#xE001;&#xE002;&#xE003;', concat($release, $segmentdel, $datadel, $subdel))"/>
+                                    </xsl:element>
                                     
                                 </xsl:for-each>
-                            </xsl:element>
-                        </xsl:if>
-                    </xsl:when>
-                    
-                    <xsl:otherwise/>
-                </xsl:choose>
+                            </xsl:for-each>
+                            
+                        </xsl:element>
+                    </xsl:if>
+                </xsl:if>
             </xsl:for-each>
         </xsl:element>
     </xsl:template>

@@ -1,0 +1,5 @@
+<edifact>UNA:+.? '
+    UNH+4+STATUS:D:96A:UN'
+    999+TELEMETRY+DATA'
+    TOOLONG+BAD+TAG'
+    UNT+5+4'</edifact>

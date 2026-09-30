@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--UNA segment found-->
+<!--Sub-element delimiter >:<-->
+<!--Data element delimiter >+<-->
+<!--Decimal point indicator >.<-->
+<!--Release character >?<-->
+<!--Reserved > <-->
+<!--Segment terminator >'<-->
+<edifact xmlns="http://www.clankysoftware.com/xslt/edifactparser">
+   <UNH>
+      <UNH01.01>3</UNH01.01>
+      <UNH02.01>DESADV</UNH02.01>
+      <UNH02.02>D</UNH02.02>
+      <UNH02.03>96A</UNH02.03>
+      <UNH02.04>UN</UNH02.04>
+   </UNH>
+   <FTX>
+      <FTX01.01>ZZZ</FTX01.01>
+      <FTX02.01/>
+      <FTX03.01/>
+      <FTX04.01>MIGRATION STATUS : REPO + ISSUES ? END' TICK</FTX04.01>
+   </FTX>
+   <UNT>
+      <UNT01.01>3</UNT01.01>
+      <UNT02.01>3</UNT02.01>
+   </UNT>
+</edifact>
